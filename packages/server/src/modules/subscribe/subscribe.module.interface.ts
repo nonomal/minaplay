@@ -1,10 +1,11 @@
 export interface SubscribeModuleOptions {
-  rpcHost: string;
-  rpcPort: number;
-  rpcPath: string;
-  rpcSecret?: string;
-
+  downloader?: 'aria2' | 'webtorrent';
   trackerAutoUpdate?: boolean;
   trackerUpdateUrl?: string;
   httpProxy?: string;
+
+  aria2RpcHost?: string;
+  aria2RpcPort?: number;
+  aria2RpcPath?: string;
+  aria2RpcSecret?: string;
 }

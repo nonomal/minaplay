@@ -9,7 +9,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CacheModule } from '@nestjs/cache-manager';
 import { BullModule } from '@nestjs/bull';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AuthorizationModule } from './modules/authorization/authorization.module.js';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { FileModule } from './modules/file/file.module.js';
@@ -30,6 +30,7 @@ import { ApplicationTimeoutInterceptor } from './common/application.timeout.inte
 import { ApplicationLogger } from './common/application.logger.service.js';
 import { MINAPLAY_VERSION } from './constants.js';
 import process from 'node:process';
+import fs from 'fs-extra';
 
 @Module({
   imports: [
@@ -61,25 +62,36 @@ import process from 'node:process';
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'mysql',
-        host: configService.get('DB_HOST', '127.0.0.1'),
-        port: Number(configService.get('DB_PORT', 3306)),
-        username: configService.get('DB_USERNAME', 'root'),
-        password: configService.get('DB_PASSWORD'),
-        database: configService.get('DB_DATABASE', 'minaplay'),
-        entities: ['dist/**/*.entity{.ts,.js}'],
-        migrations: ['dist/migrations/*{.ts,.js}'],
-        migrationsTableName: 'migrations_minaplay',
-        synchronize: configService.get('APP_ENV') === 'dev',
-        migrationsRun: configService.get('APP_ENV') !== 'dev',
-      }),
+      useFactory: (configService: ConfigService) => {
+        const caPath = configService.get<string>('DB_SSL_CA') || undefined;
+        let ca: Buffer = undefined;
+        if (caPath?.toLowerCase() !== 'none' && fs.pathExistsSync(caPath)) {
+          ca = fs.readFileSync(caPath);
+        }
+        return {
+          type: 'mysql',
+          host: configService.get('DB_HOST', '127.0.0.1'),
+          port: Number(configService.get('DB_PORT', 3306)),
+          username: configService.get('DB_USERNAME', 'root'),
+          password: configService.get('DB_PASSWORD'),
+          database: configService.get('DB_DATABASE', 'minaplay'),
+          entities: ['dist/**/*.entity{.ts,.js}'],
+          migrations: ['dist/migrations/*{.ts,.js}'],
+          migrationsTableName: 'migrations_minaplay',
+          synchronize: configService.get('APP_ENV') === 'dev',
+          migrationsRun: configService.get('APP_ENV') !== 'dev',
+          ssl: caPath && {
+            ca,
+            rejectUnauthorized: caPath?.toLowerCase() !== 'none',
+          },
+        } as TypeOrmModuleOptions;
+      },
     }),
     LiveModule.registerAsync({
       inject: [ConfigService],
       isGlobal: true,
       useFactory: (configService: ConfigService) => ({
-        mediasoupAnnouncedIp: configService.get('MS_ANNOUNCED_IP', '127.0.0.1'),
+        mediasoupAnnouncedAddress: configService.get('MS_ANNOUNCED_ADDRESS', '127.0.0.1'),
         mediasoupRtcMinPort: Number(configService.get('MS_RTC_MIN_PORT', 12000)),
         mediasoupRtcMaxPort: Number(configService.get('MS_RTC_MAX_PORT', 12999)),
         mediasoupWorkerNum: Number(configService.get('MS_WORKERS_NUM', cpus().length)),
@@ -105,13 +117,14 @@ import process from 'node:process';
       inject: [ConfigService],
       isGlobal: true,
       useFactory: (configService: ConfigService) => ({
-        rpcHost: configService.get('ARIA2_RPC_HOST', '127.0.0.1'),
-        rpcPort: Number(configService.get('ARIA2_RPC_PORT', 6800)),
-        rpcPath: configService.get('ARIA2_RPC_PATH', '/jsonrpc'),
-        rpcSecret: configService.get('ARIA2_RPC_SECRET'),
-        trackerAutoUpdate: Number(configService.get('ARIA2_AUTO_UPDATE_TRACKER', 0)) === 1,
-        trackerUpdateUrl: configService.get('ARIA2_TRACKER_LIST_URL'),
+        downloader: configService.get('DOWNLOAD_ADAPTER') ?? 'webtorrent',
+        trackerAutoUpdate: Number(configService.get('DOWNLOAD_AUTO_UPDATE_TRACKER', 0)) === 1,
+        trackerUpdateUrl: configService.get('DOWNLOAD_TRACKER_LIST_URL'),
         httpProxy: process.env.HTTP_PROXY ?? configService.get('APP_HTTP_PROXY'),
+        aria2RpcHost: configService.get('ARIA2_RPC_HOST', '127.0.0.1'),
+        aria2RpcPort: Number(configService.get('ARIA2_RPC_PORT', 6800)),
+        aria2RpcPath: configService.get('ARIA2_RPC_PATH', '/jsonrpc'),
+        aria2RpcSecret: configService.get('ARIA2_RPC_SECRET'),
       }),
     }),
     NotificationModule.registerAsync({
@@ -173,12 +186,15 @@ export class AppModule implements OnApplicationBootstrap {
   private logger = new ApplicationLogger('MinaPlay');
 
   onApplicationBootstrap() {
-    this.logger.log(`Welcome to MinaPlay v${MINAPLAY_VERSION} ${banner}`);
+    let banner = MINAPLAY_BANNER;
+    if (fs.pathExistsSync('banner.txt')) {
+      banner = fs.readFileSync('banner.txt').toString();
+    }
+    this.logger.log(`Welcome to MinaPlay v${MINAPLAY_VERSION}\n${banner}`);
   }
 }
 
-const banner = `
-
+const MINAPLAY_BANNER = `
     __  ____             ____  __           
    /  |/  (_)___  ____ _/ __ \\/ /___ ___  __
   / /|_/ / / __ \\/ __ \`/ /_/ / / __ \`/ / / /

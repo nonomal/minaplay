@@ -89,6 +89,7 @@ export class RuleService {
 
     const validateHook = await exports.get('validate', { reference: true });
     const describeHook = await exports.get('describe', { reference: true });
+    const meta = await exports.get('meta', { reference: true });
     const hooks = {
       validate: await this.buildRuleHook('validate', validateHook),
       describe: await this.buildRuleHook('describe', describeHook),
@@ -110,6 +111,7 @@ export class RuleService {
       context,
       module,
       hooks,
+      meta: (await meta.copy()) ?? {},
       release,
     };
   }
@@ -120,15 +122,18 @@ export class RuleService {
     await fs.ensureDir(RULE_CODE_DIR);
     await fs.writeFile(filepath, code);
     const fileStat = await fs.stat(filepath);
-    return await this.fileService.save({
-      user: user && { id: user.id },
-      filename: filename,
-      name: filename,
-      size: fileStat.size,
-      md5: await generateMD5(code),
-      source: FileSourceEnum.USER_UPLOAD,
-      path: filepath,
-    });
+    return await this.fileService.save(
+      {
+        user: user && { id: user.id },
+        filename: filename,
+        name: filename,
+        size: fileStat.size,
+        md5: await generateMD5(code),
+        source: FileSourceEnum.USER_UPLOAD,
+        path: filepath,
+      },
+      true,
+    );
   }
 
   async save(rule: DeepPartial<Rule>) {

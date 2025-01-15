@@ -6,14 +6,15 @@ import { SocketIOAdapter } from './common/socket-io.adapter.js';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { MINAPLAY_VERSION } from './constants.js';
 import { ApplicationLogger } from './common/application.logger.service.js';
+import { bootstrap as globalProxyBootstrap } from 'global-agent';
 import process from 'node:process';
 
 async function bootstrap() {
   const logger = new ApplicationLogger();
 
   process.title = `MinaPlay v${MINAPLAY_VERSION}`;
-  process.on('unhandledRejection', (reason) => {
-    logger.error(`Uncaught rejection: ${reason}`, (reason as Error)?.stack, 'MinaPlay');
+  process.on('unhandledRejection', (reason: Error) => {
+    logger.error(`Uncaught rejection: ${JSON.stringify(reason)}`, reason?.stack, 'MinaPlay');
   });
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger });
@@ -32,6 +33,13 @@ async function bootstrap() {
 
   // use custom socket-io adapter
   app.useWebSocketAdapter(new SocketIOAdapter(app, configService));
+
+  // global proxy setting
+  const proxy = process.env.HTTP_PROXY ?? configService.get('APP_HTTP_PROXY');
+  if (proxy && configService.get('APP_GLOBAL_PROXY')) {
+    globalProxyBootstrap();
+    global.GLOBAL_AGENT.HTTP_PROXY = proxy;
+  }
 
   // swagger settings
   if (configService.get('APP_ENV') === 'dev') {
